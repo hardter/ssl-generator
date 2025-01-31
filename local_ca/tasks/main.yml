@@ -1,0 +1,92 @@
+---
+
+- name: Debug variables
+  ansible.builtin.debug:
+    msg:
+      - "{{ local_ca_server_name }}"
+      - "{{ local_ca_server_fqdn }}"
+      - "{{ local_ca_private_dir }}"
+    verbosity: 1
+
+- name: Create required directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ local_ca_owner }}"
+    group: "{{ local_ca_group }}"
+  loop:
+    - "{{ local_ca_output_dir }}"
+    - "{{ local_ca_private_dir }}"
+    - "{{ local_ca_certs_dir }}"
+    - "{{ local_ca_crl_dir }}"
+    - "{{ local_ca_newcerts_dir }}"
+    - "{{ local_ca_requests_dir }}"
+
+- name: Create the index
+  ansible.builtin.file:
+   path: "{{ local_ca_base_path }}/index.txt"
+   state: touch
+   owner: "{{ local_ca_owner }}"
+   group: "{{ local_ca_group }}"
+   mode: '0755'
+
+- name: Create the serial file
+  ansible.builtin.copy:
+    content: "1000\n"
+    dest: "{{ local_ca_base_path }}/serial"
+    owner: "{{ local_ca_owner }}"
+    group: "{{ local_ca_group }}"
+    mode: '0755'
+
+- name: Modify openssl.cnf config
+  ansible.builtin.template:
+    src: openssl-template-config.j2
+    dest: "{{ local_ca_config }}"
+
+- name: Create CA private key
+  ansible.builtin.expect:
+    command: openssl genpkey -algorithm RSA -out {{ local_ca_private_dir }}/ca.key.pem -aes256
+    responses:
+      "Enter.*": "{{ local_ca_passphrase }}"
+      "Verifying.*": "{{ local_ca_passphrase }}"
+  args:
+    creates: "{{ local_ca_private_dir }}/ca.key.pem"
+
+- name: Create the CA certificate
+  ansible.builtin.expect:
+    command: openssl req -config {{ local_ca_config }} -key {{ local_ca_private_dir }}/ca.key.pem -new -x509 -days 3650 -sha256 -extensions v3_ca -out {{ local_ca_certs_dir }}/ca.cert.pem
+    responses:
+      "Enter pass phrase.*": "{{ local_ca_passphrase }}"
+  args:
+    creates: "{{ local_ca_certs_dir }}/ca.cert.pem"
+
+- name: Generate server private key
+  ansible.builtin.command: openssl genpkey -algorithm RSA -out {{ local_ca_private_dir }}/{{ local_ca_server_name }}.key.pem
+  args:
+    creates: "{{ local_ca_private_dir }}/{{ local_ca_server_name }}.key.pem"
+
+- name: Generate server CSR
+  ansible.builtin.command: openssl req -config {{ local_ca_config }} -key {{ local_ca_private_dir }}/{{ local_ca_server_name }}.key.pem -new -sha256 -out {{ local_ca_requests_dir }}/{{ local_ca_server_name }}.csr.pem -batch
+  args:
+    creates: "{{ local_ca_requests_dir }}/{{ local_ca_server_name }}.csr.pem"
+
+- name: Sign the certificate
+  ansible.builtin.expect:
+    command: openssl ca -batch -config {{ local_ca_config }} -extensions server_cert -days 3650 -notext -md sha256 -in {{ local_ca_requests_dir }}/{{ local_ca_server_name }}.csr.pem -out {{ local_ca_output_dir }}/{{ local_ca_server_name }}.cert.pem
+    responses:
+      "Enter.*": "{{ local_ca_passphrase }}"
+      # "(?m)^Certificate is to be certified until.*^Sign the certificate\\? \\[y/n\\]:": "y"
+      # "(?m)^1 out of 1 certificate requests certified, commit\\? \\[y/n\\]:": "y"
+  args:
+    creates: "{{ local_ca_output_dir }}/{{ local_ca_server_name }}.cert.pem"
+
+- name: Generate pfx if cert is for Windows
+  ansible.builtin.expect:
+    command: openssl pkcs12 -export -out {{ local_ca_private_dir }}/{{ local_ca_server_name }}.pfx -inkey {{ local_ca_private_dir }}/{{ local_ca_server_name }}.key.pem -in {{ local_ca_certs_dir }}/{{ local_ca_server_name }}.cert.pem -certfile {{ local_ca_certs_dir }}/ca.cert.pem
+    responses:
+        "Enter.*": "{{ local_ca_passphrase }}"
+        "Verifying.*": "{{ local_ca_passphrase }}"
+  args:
+    creates: "{{ local_ca_private_dir }}/{{ local_ca_server_name }}.pfx"
+  when: local_ca_is_windows == true

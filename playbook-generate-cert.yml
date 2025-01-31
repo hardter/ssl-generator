@@ -1,0 +1,7 @@
+---
+- hosts: "{{ target_hosts }}"
+  gather_facts: false
+  vars_files:
+    - creds-dns-01.yml
+  roles:
+    - local_ca

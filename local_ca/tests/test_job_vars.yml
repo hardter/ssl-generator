@@ -1,0 +1,23 @@
+# ansible-playbook playbook-generate-cert.yml -i local_ca/tests/inventory.yml -e 'target_hosts=laserfiche.hardter.local' -e '@local_ca/tests/test_job_vars.yml'
+# Lead folder names with /
+# Do not lead file names with /
+owner: dnsguy
+group: dnsguy
+base_path: /home/dnsguy/localCA
+output_dir: /certs
+private_dir: /private
+certs_dir: /certs
+crl_dir: /crl
+newcerts_dir: /newcerts
+requests_dir: /requests
+config: hardter-openssl.cnf
+key: ca.key.pem
+cert: ca.cert.pem
+server_name: laserfiche
+server_fqdn: laserfiche.hardter.local
+country: US
+state: New York
+town: Baldwinsville
+org: Hardter Enterprises, LLC
+contact_email: info@hardter-enterprises.com
+is_windows: false
